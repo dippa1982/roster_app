@@ -110,6 +110,14 @@ def migrate_schema():
     # create(checkfirst=True) leaves an existing table untouched.
     HolidayRequest.__table__.create(bind=db.engine, checkfirst=True)
 
+    # Holiday entries in older imports had no hours because the PDF only
+    # prints the word "Holiday". In this roster a holiday is paid as the
+    # standard 10-hour shift, so repair those existing rows as well.
+    db.session.execute(
+        text("UPDATE shift SET hours = 10, pay_type = 'holiday' WHERE employer = 'Holiday' AND (hours IS NULL OR hours = 0)")
+    )
+    db.session.commit()
+
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -264,7 +272,9 @@ def parse_roster(pdf_path):
         shifts.append({
             **row,
             "shift_date": shift_date,
-            "hours": 0.0 if row["employer"] == "Holiday" else 10.0,
+            # The PDF does not print a duration for annual leave, but your
+            # roster uses 10-hour shifts, so holiday pay is calculated on 10h.
+            "hours": 10.0,
         })
 
     doc.close()
@@ -407,6 +417,7 @@ def calendar_context(roster, shifts, year, month):
     calendar_weeks = build_calendar_data(shifts, year, month, month_requests)
     month_events = [s for s in shifts if s.shift_date.year == year and s.shift_date.month == month]
     worked = [s for s in month_events if s.employer != "Holiday"]
+    payable = [s for s in month_events if s.hours and s.hours > 0]
     prev_year, prev_month = month_offset(year, month, -1)
     next_year, next_month = month_offset(year, month, 1)
     settings = load_settings()
@@ -434,12 +445,13 @@ def calendar_context(roster, shifts, year, month):
             "holidays": sum(s.employer == "Holiday" for s in month_events),
             "earnings": sum(
                 s.hours * (
-                    overtime_rate if s.pay_type == "overtime"
-                    else holiday_rate if s.pay_type == "holiday"
+                    holiday_rate if s.employer == "Holiday" or s.pay_type == "holiday"
+                    else overtime_rate if s.pay_type == "overtime"
                     else hourly_rate
                 )
-                for s in worked
-            ) if hourly_rate else 0,
+                for s in payable
+                if (holiday_rate if s.employer == "Holiday" or s.pay_type == "holiday" else overtime_rate if s.pay_type == "overtime" else hourly_rate) is not None
+            ),
         },
         "hourly_rate": hourly_rate,
         "holiday_rate": holiday_rate,
@@ -669,6 +681,24 @@ def holiday_request():
     else:
         flash(f"Holiday request added for {request_date.strftime('%d %b %Y')}. {message}", "error")
     return redirect(url_for("calendar", year=request_date.year, month=request_date.month))
+
+
+@app.route("/holiday-request/<int:request_id>/status", methods=["POST"])
+def update_holiday_request_status(request_id):
+    req = db.session.get(HolidayRequest, request_id)
+    if not req:
+        flash("Holiday request not found.", "error")
+        return redirect(url_for("calendar"))
+
+    status = request.form.get("status", "").strip().title()
+    if status not in {"Requested", "Accepted", "Denied", "Cancelled"}:
+        flash("Invalid holiday request status.", "error")
+        return redirect(url_for("calendar", year=req.request_date.year, month=req.request_date.month))
+
+    req.status = status
+    db.session.commit()
+    flash(f"Holiday request for {req.request_date.strftime('%d %b %Y')} marked {status.lower()}.", "success")
+    return redirect(url_for("calendar", year=req.request_date.year, month=req.request_date.month))
 
 
 @app.route("/test-email", methods=["POST"])

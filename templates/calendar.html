@@ -78,8 +78,20 @@
               {% endfor %}
               {% for req in cell.holiday_requests %}
                 <div class="holiday-request-box" title="Holiday requested by {{ req.requested_by }}{% if req.note %}: {{ req.note }}{% endif %}">
-                  <strong>Holiday requested</strong>
-                  <span>{{ req.status }}</span>
+                  <strong>Holiday {{ req.status|lower }}</strong>
+                  <span>{{ req.requested_by }}</span>
+                  <div class="holiday-request-actions">
+                    {% if req.status == 'Requested' %}
+                      <form method="post" action="{{ url_for('update_holiday_request_status', request_id=req.id) }}" onclick="event.stopPropagation()"><input type="hidden" name="status" value="Accepted"><button class="btn secondary" type="submit">Accept</button></form>
+                      <form method="post" action="{{ url_for('update_holiday_request_status', request_id=req.id) }}" onclick="event.stopPropagation()"><input type="hidden" name="status" value="Denied"><button class="btn secondary" type="submit">Deny</button></form>
+                    {% elif req.status == 'Accepted' %}
+                      <form method="post" action="{{ url_for('update_holiday_request_status', request_id=req.id) }}" onclick="event.stopPropagation()"><input type="hidden" name="status" value="Cancelled"><button class="btn secondary" type="submit">Cancel</button></form>
+                    {% elif req.status == 'Denied' %}
+                      <form method="post" action="{{ url_for('update_holiday_request_status', request_id=req.id) }}" onclick="event.stopPropagation()"><input type="hidden" name="status" value="Cancelled"><button class="btn secondary" type="submit">Cancel</button></form>
+                    {% elif req.status == 'Cancelled' %}
+                      <form method="post" action="{{ url_for('update_holiday_request_status', request_id=req.id) }}" onclick="event.stopPropagation()"><input type="hidden" name="status" value="Requested"><button class="btn secondary" type="submit">Re-request</button></form>
+                    {% endif %}
+                  </div>
                 </div>
               {% endfor %}
             </div>
@@ -118,7 +130,7 @@
           <td>{{ event.start_time or '—' }}</td>
           <td>{{ event.finish_time or '—' }}</td>
           <td>{{ event.hours|int }}h</td>
-          <td>{{ money(event.hours * hourly_rate) if hourly_rate else '—' }}</td>
+          <td>{% if event.employer == 'Holiday' or event.pay_type == 'holiday' %}{{ money(event.hours * holiday_rate) }}{% elif event.pay_type == 'overtime' %}{{ money(event.hours * overtime_rate) }}{% elif hourly_rate %}{{ money(event.hours * hourly_rate) }}{% else %}—{% endif %}</td>
         </tr>
       {% endfor %}
       </tbody>
@@ -181,11 +193,11 @@ function closeAddShift(event) {
 }
 document.querySelectorAll('.calendar-day[tabindex="0"]').forEach(day => {
   day.addEventListener('click', event => {
-    if (event.target.closest('.calendar-event')) return;
+    if (event.target.closest('.calendar-event') || event.target.closest('.holiday-request-box')) return;
     openAddShift(day.dataset.date);
   });
   day.addEventListener('keydown', event => {
-    if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('.calendar-event')) {
+    if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('.calendar-event') && !event.target.closest('.holiday-request-box')) {
       event.preventDefault();
       openAddShift(day.dataset.date);
     }
