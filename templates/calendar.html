@@ -54,6 +54,7 @@
     <span><i class="legend-dot ocado-dot"></i> Ocado</span>
     <span><i class="legend-dot morrisons-dot"></i> Morrisons</span>
     <span><i class="legend-dot holiday-dot"></i> Holiday</span>
+    <span><i class="legend-dot holiday-dot"></i> Unconfirmed</span>
     <span class="legend-help">Click a day to add a shift or request holiday · click a shift for details</span>
   </div>
 
@@ -75,6 +76,17 @@
                   </div>
                   {% if event.start_time %}<div class="event-time">{{ event.start_time }}</div>{% endif %}
                 </button>
+              {% endfor %}
+              {% for item in cell.unconfirmed_shifts %}
+                <div class="holiday-request-box" title="Unconfirmed shift from MiOcado. Time and employer have not been confirmed yet." onclick="event.stopPropagation()">
+                  <strong>Unconfirmed shift</strong>
+                  <span>Not confirmed</span>
+                  <div class="holiday-request-actions">
+                    <form method="post" action="{{ url_for('remove_unconfirmed_shift', shift_id=item.id) }}" onclick="event.stopPropagation()">
+                      <button class="btn secondary" type="submit">Remove</button>
+                    </form>
+                  </div>
+                </div>
               {% endfor %}
               {% for req in cell.holiday_requests %}
                 <div class="holiday-request-box" title="Holiday requested by {{ req.requested_by }}{% if req.note %}: {{ req.note }}{% endif %}">

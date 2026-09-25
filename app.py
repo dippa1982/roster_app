@@ -87,6 +87,14 @@ class HolidayRequest(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class UnconfirmedShift(db.Model):
+    """Shift shown in MiOcado but not yet confirmed on the official roster."""
+    id = db.Column(db.Integer, primary_key=True)
+    shift_date = db.Column(db.Date, nullable=False, unique=True)
+    source_filename = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 
 def migrate_schema():
     """Safely add the small schema changes used by the newer features.
@@ -109,6 +117,7 @@ def migrate_schema():
     # Existing installations will not have the holiday_request table.
     # create(checkfirst=True) leaves an existing table untouched.
     HolidayRequest.__table__.create(bind=db.engine, checkfirst=True)
+    UnconfirmedShift.__table__.create(bind=db.engine, checkfirst=True)
 
     # Holiday entries in older imports had no hours because the PDF only
     # prints the word "Holiday". In this roster a holiday is paid as the
@@ -290,6 +299,22 @@ def parse_roster(pdf_path):
         "shifts": shifts,
     }
 
+def parse_unconfirmed_roster(pdf_path):
+    """Read UNCONFIRMED_SHIFTS metadata from the generated MiOcado PDF."""
+    doc = fitz.open(pdf_path)
+    found = set()
+    for page in doc:
+        page_text = page.get_text()
+        for match in re.finditer(r"UNCONFIRMED_SHIFTS:\s*([^\n\r]+)", page_text):
+            for raw in re.findall(r"\d{4}-\d{2}-\d{2}", match.group(1)):
+                try:
+                    found.add(datetime.strptime(raw, "%Y-%m-%d").date())
+                except ValueError:
+                    pass
+    doc.close()
+    return sorted(found)
+
+
 def load_settings():
     defaults = {
         "hourly_rate": None,
@@ -380,7 +405,7 @@ def serialise_shifts(shifts):
         } for s in shifts
     })
 
-def build_calendar_data(shifts, year, month, holiday_requests=None):
+def build_calendar_data(shifts, year, month, holiday_requests=None, unconfirmed_shifts=None):
     """Build a Monday-first calendar grid for the requested month."""
     cal = pycalendar.Calendar(firstweekday=0)  # Monday
     weeks = []
@@ -391,6 +416,9 @@ def build_calendar_data(shifts, year, month, holiday_requests=None):
     requests_by_date = {}
     for req in (holiday_requests or []):
         requests_by_date.setdefault(req.request_date, []).append(req)
+    unconfirmed_by_date = {}
+    for item in (unconfirmed_shifts or []):
+        unconfirmed_by_date.setdefault(item.shift_date, []).append(item)
 
     for week in cal.monthdatescalendar(year, month):
         cells = []
@@ -401,6 +429,7 @@ def build_calendar_data(shifts, year, month, holiday_requests=None):
                 "is_today": day_value == today,
                 "events": by_date.get(day_value, []),
                 "holiday_requests": requests_by_date.get(day_value, []),
+                "unconfirmed_shifts": unconfirmed_by_date.get(day_value, []),
             })
         weeks.append(cells)
     return weeks
@@ -414,7 +443,9 @@ def month_offset(year, month, offset):
 def calendar_context(roster, shifts, year, month):
     requests = HolidayRequest.query.filter_by(roster_id=roster.id).all()
     month_requests = [r for r in requests if r.request_date.year == year and r.request_date.month == month]
-    calendar_weeks = build_calendar_data(shifts, year, month, month_requests)
+    all_unconfirmed = UnconfirmedShift.query.order_by(UnconfirmedShift.shift_date).all()
+    unconfirmed = [u for u in all_unconfirmed if u.shift_date.year == year and u.shift_date.month == month]
+    calendar_weeks = build_calendar_data(shifts, year, month, month_requests, unconfirmed)
     month_events = [s for s in shifts if s.shift_date.year == year and s.shift_date.month == month]
     worked = [s for s in month_events if s.employer != "Holiday"]
     payable = [s for s in month_events if s.hours and s.hours > 0]
@@ -459,6 +490,7 @@ def calendar_context(roster, shifts, year, month):
         "money": money,
         "month_events": month_events,
         "holiday_requests": month_requests,
+        "unconfirmed_shifts": unconfirmed,
         "shift_json": serialise_shifts(shifts),
     }
 
@@ -566,6 +598,27 @@ def upload_roster():
     saved_path = UPLOAD_DIR / f"{datetime.utcnow():%Y%m%d%H%M%S}_{filename}"
     file.save(saved_path)
 
+    # A generated MiOcado calendar PDF can contain a machine-readable list
+    # of unconfirmed shift dates. Import those without replacing the active
+    # confirmed roster.
+    try:
+        unconfirmed_dates = parse_unconfirmed_roster(saved_path)
+    except Exception:
+        unconfirmed_dates = []
+
+    if unconfirmed_dates:
+        added = 0
+        for shift_date in unconfirmed_dates:
+            existing = UnconfirmedShift.query.filter_by(shift_date=shift_date).first()
+            if existing:
+                existing.source_filename = filename
+            else:
+                db.session.add(UnconfirmedShift(shift_date=shift_date, source_filename=filename))
+                added += 1
+        db.session.commit()
+        flash(f"Unconfirmed shifts imported: {added} new dates ({len(unconfirmed_dates)} dates found).", "success")
+        return redirect(url_for("calendar", year=unconfirmed_dates[0].year, month=unconfirmed_dates[0].month))
+
     try:
         parsed = parse_roster(saved_path)
     except Exception as exc:
@@ -602,6 +655,19 @@ def upload_roster():
     db.session.commit()
     flash("New roster uploaded successfully.", "success")
     return redirect(url_for("dashboard"))
+
+
+@app.route("/unconfirmed/<int:shift_id>/remove", methods=["POST"])
+def remove_unconfirmed_shift(shift_id):
+    item = db.session.get(UnconfirmedShift, shift_id)
+    if not item:
+        flash("Unconfirmed shift not found.", "error")
+        return redirect(url_for("calendar"))
+    shift_date = item.shift_date
+    db.session.delete(item)
+    db.session.commit()
+    flash(f"Unconfirmed shift for {shift_date.strftime('%d %b %Y')} removed.", "success")
+    return redirect(url_for("calendar", year=shift_date.year, month=shift_date.month))
 
 
 @app.route("/shift/add", methods=["POST"])
