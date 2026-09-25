@@ -41,12 +41,7 @@
       <a class="btn secondary" href="{{ url_for('calendar', year=prev_year, month=prev_month) }}">‹</a>
 
       <form class="month-picker" method="get" action="{{ url_for('calendar') }}">
-        <select name="month" aria-label="Select month">
-          {% for option in month_options %}
-            <option value="{{ option.month }}" {% if option.year == year and option.month == month %}selected{% endif %}>{{ option.label }}</option>
-          {% endfor %}
-        </select>
-        <input type="hidden" name="year" value="{{ year }}">
+        <input type="month" name="month_date" aria-label="Select month and year" value="{{ '%04d-%02d'|format(year, month) }}">
         <button class="btn secondary" type="submit">Go</button>
       </form>
 

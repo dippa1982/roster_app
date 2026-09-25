@@ -181,13 +181,39 @@ def parse_roster(pdf_path):
             return None
         return min(candidates, key=lambda w: abs((w[1] - iy) - 50))
 
-    # Detect the two actual roster icon images by their source xref.
-    morrisons_rects = page.get_image_rects(3)
-    ocado_rects = page.get_image_rects(5)
+    # Detect the two roster icons from the embedded image dimensions rather
+    # than relying on fixed xref numbers. PDF generators can change xref
+    # numbering between files, which can otherwise make one employer vanish
+    # from imported rosters. In the Leeds roster template the Morrisons M
+    # source image is 40x40 and the Ocado source image is 32x32.
+    image_sources = {}
+    for img in page.get_images(full=True):
+        xref = img[0]
+        width, height = img[2], img[3]
+        rects = page.get_image_rects(xref)
+        if not rects:
+            continue
+        if (width, height) == (40, 40):
+            image_sources["Morrisons"] = rects
+        elif (width, height) == (32, 32):
+            image_sources["Ocado"] = rects
+
+    # Fallback for older/variant copies of this exact roster where the source
+    # dimensions aren't preserved as expected. These are the known template
+    # xrefs, but are only used if dimension-based detection did not find the icon.
+    if "Morrisons" not in image_sources:
+        rects = page.get_image_rects(3)
+        if rects:
+            image_sources["Morrisons"] = rects
+    if "Ocado" not in image_sources:
+        rects = page.get_image_rects(5)
+        if rects:
+            image_sources["Ocado"] = rects
 
     rows = []
 
-    for company, rects in [("Morrisons", morrisons_rects), ("Ocado", ocado_rects)]:
+    for company in ("Morrisons", "Ocado"):
+        rects = image_sources.get(company, [])
         for rect in rects:
             # Ignore legend icons and other content below/outside the roster.
             matching_week = min(
@@ -329,16 +355,6 @@ def save_settings(data):
 def money(value):
     return f"£{float(value):,.2f}"
 
-def build_month_options(roster):
-    options = []
-    cursor = date(roster.period_start.year, roster.period_start.month, 1)
-    end = date(roster.period_end.year, roster.period_end.month, 1)
-    while cursor <= end:
-        options.append({"year": cursor.year, "month": cursor.month, "label": cursor.strftime("%B %Y")})
-        y, m = month_offset(cursor.year, cursor.month, 1)
-        cursor = date(y, m, 1)
-    return options
-
 def serialise_shifts(shifts):
     import json
     return json.dumps({
@@ -431,7 +447,6 @@ def calendar_context(roster, shifts, year, month):
         "money": money,
         "month_events": month_events,
         "holiday_requests": month_requests,
-        "month_options": build_month_options(roster),
         "shift_json": serialise_shifts(shifts),
     }
 
@@ -495,10 +510,22 @@ def calendar():
     shifts = Shift.query.filter_by(roster_id=roster.id).order_by(Shift.shift_date).all()
     requested_year = request.args.get("year", type=int)
     requested_month = request.args.get("month", type=int)
+    requested_month_date = request.args.get("month_date", "").strip()
 
-    if requested_year and requested_month and 1 <= requested_month <= 12:
+    # The calendar is intentionally not limited to the roster period or a
+    # single year. The month input can navigate to any valid calendar year.
+    if requested_month_date:
+        try:
+            selected = datetime.strptime(requested_month_date, "%Y-%m")
+            year, month = selected.year, selected.month
+        except ValueError:
+            year = month = None
+    elif requested_year and requested_month and 1 <= requested_month <= 12:
         year, month = requested_year, requested_month
     else:
+        year = month = None
+
+    if not year or not month:
         today = date.today()
         if roster.period_start <= today <= roster.period_end:
             year, month = today.year, today.month
