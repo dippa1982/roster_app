@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roster Calendar</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav>
+  <div class="container nav-inner">
+    <div class="brand">My <span>Roster</span></div>
+    <div class="links">
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a class="active" href="{{ url_for('calendar') }}">Calendar</a>
+      <a href="{{ url_for('upload_roster') }}">Upload</a>
+      <a href="{{ url_for('history') }}">History</a>
+      <a href="{{ url_for('settings') }}">Settings</a>
+    </div>
+  </div>
+</nav>
+<main>
+<div class="container">
+{% with messages=get_flashed_messages(with_categories=true) %}
+  {% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+{% endwith %}
+
+{% if not roster %}
+  <div class="card empty-state">
+    <h1>No roster loaded</h1>
+    <p class="subtitle">Upload a roster to see your shifts on a calendar.</p>
+    <a class="btn" href="{{ url_for('upload_roster') }}">Upload roster</a>
+  </div>
+{% else %}
+  <div class="calendar-header">
+    <div>
+      <h1>Roster Calendar</h1>
+      <div class="subtitle">{{ roster.employee or 'Employee' }} · {{ roster.period_start.strftime('%d %b %Y') }} – {{ roster.period_end.strftime('%d %b %Y') }}</div>
+    </div>
+    <div class="calendar-actions">
+      <a class="btn secondary" href="{{ url_for('calendar', year=prev_year, month=prev_month) }}">‹</a>
+
+      <form class="month-picker" method="get" action="{{ url_for('calendar') }}">
+        <select name="month" aria-label="Select month">
+          {% for option in month_options %}
+            <option value="{{ option.month }}" {% if option.year == year and option.month == month %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="year" value="{{ year }}">
+        <button class="btn secondary" type="submit">Go</button>
+      </form>
+
+      <a class="btn secondary" href="{{ url_for('calendar', year=next_year, month=next_month) }}">›</a>
+      <a class="btn" href="{{ url_for('calendar', year=today.year, month=today.month) }}">Today</a>
+    </div>
+  </div>
+
+  <div class="calendar-legend">
+    <span><i class="legend-dot ocado-dot"></i> Ocado</span>
+    <span><i class="legend-dot morrisons-dot"></i> Morrisons</span>
+    <span><i class="legend-dot holiday-dot"></i> Holiday</span>
+    <span class="legend-help">Click a day to add a shift or request holiday · click a shift for details</span>
+  </div>
+
+  <div class="calendar-card">
+    <div class="calendar-weekdays">
+      {% for day in weekdays %}<div>{{ day }}</div>{% endfor %}
+    </div>
+    <div class="calendar-grid">
+      {% for week in calendar_weeks %}
+        {% for cell in week %}
+          <div class="calendar-day {% if not cell.in_month %}outside-month{% endif %} {% if cell.is_today %}today{% endif %}" data-date="{{ cell.date.strftime('%Y-%m-%d') }}" tabindex="0" role="button">
+            <div class="day-number">{{ cell.date.day }}</div>
+            <div class="events">
+              {% for event in cell.events %}
+                <button type="button" class="calendar-event {{ event.employer|lower }}" onclick="openShift({{ event.id }})">
+                  <div class="event-top">
+                    <strong>{{ event.employer }}</strong>
+                    {% if event.hours %}<span>{{ event.hours|int }}h</span>{% endif %}
+                  </div>
+                  {% if event.start_time %}<div class="event-time">{{ event.start_time }}</div>{% endif %}
+                </button>
+              {% endfor %}
+              {% for req in cell.holiday_requests %}
+                <div class="holiday-request-box" title="Holiday requested by {{ req.requested_by }}{% if req.note %}: {{ req.note }}{% endif %}">
+                  <strong>Holiday requested</strong>
+                  <span>{{ req.status }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="calendar-summary">
+    <div class="card"><span class="label">This month</span><strong>{{ month_stats.shifts }}</strong><span>worked shifts</span></div>
+    <div class="card"><span class="label">Hours</span><strong>{{ month_stats.hours|int }}</strong><span>scheduled hours</span></div>
+    <div class="card"><span class="label">Ocado</span><strong>{{ month_stats.ocado }}</strong><span>shifts</span></div>
+    <div class="card"><span class="label">Morrisons</span><strong>{{ month_stats.morrisons }}</strong><span>shifts</span></div>
+    <div class="card"><span class="label">Estimated gross</span><strong>{{ money(month_stats.earnings) }}</strong><span>{% if hourly_rate %}at {{ money(hourly_rate) }}/hour{% else %}<a href="{{ url_for('settings') }}">Set hourly rate</a>{% endif %}</span></div>
+  </div>
+
+  <div class="shift-list card">
+    <div class="section-heading">
+      <div>
+        <h2>Shifts in {{ month_name }}</h2>
+        <div class="subtitle">Click a shift above for the full details.</div>
+      </div>
+      <span class="badge">{{ month_stats.shifts }} shifts · {{ month_stats.hours|int }}h</span>
+    </div>
+    {% if month_events %}
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Day</th><th>Employer</th><th>Start</th><th>Finish</th><th>Hours</th><th>Est. gross</th></tr></thead>
+      <tbody>
+      {% for event in month_events|sort(attribute='shift_date') %}
+        <tr onclick="openShift({{ event.id }})" class="clickable-row">
+          <td>{{ event.shift_date.strftime('%d/%m/%Y') }}</td>
+          <td>{{ event.day_name }}</td>
+          <td><span class="badge {{ event.employer|lower }}">{{ event.employer }}</span></td>
+          <td>{{ event.start_time or '—' }}</td>
+          <td>{{ event.finish_time or '—' }}</td>
+          <td>{{ event.hours|int }}h</td>
+          <td>{{ money(event.hours * hourly_rate) if hourly_rate else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+      <p class="subtitle">No shifts or holidays recorded for this month.</p>
+    {% endif %}
+  </div>
+{% endif %}
+</div>
+</main>
+
+<div id="addShiftModal" class="modal" onclick="closeAddShift(event)">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <button class="modal-close" type="button" onclick="closeAddShift()">×</button>
+    <div id="addShiftContent"></div>
+  </div>
+</div>
+
+<div id="shiftModal" class="modal" onclick="closeShift(event)">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <button class="modal-close" type="button" onclick="closeShift()">×</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+function openAddShift(dateValue) {
+  document.getElementById('addShiftContent').innerHTML = `
+    <div class="modal-kicker">Add extra shift</div>
+    <h2>${new Date(dateValue + 'T12:00:00').toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'})}</h2>
+    <form method="post" action="{{ url_for('add_shift') }}">
+      <input type="hidden" name="shift_date" value="${dateValue}">
+      <div class="detail-grid">
+        <label>Employer<select name="employer"><option value="Ocado">Ocado</option><option value="Morrisons">Morrisons</option></select></label>
+        <label>Start time<input type="time" name="start_time" value="14:00"></label>
+        <label>Shift length (hours)<input type="number" name="hours" value="10" min="0.5" max="24" step="0.5" required></label>
+        <label>Pay type<select name="pay_type"><option value="normal">Normal (£{{ money(hourly_rate) if hourly_rate else 'set in Settings' }}/hr)</option><option value="overtime">Overtime (£{{ money(overtime_rate) }}/hr)</option></select></label>
+      </div>
+      <button class="btn" type="submit">Add shift</button>
+    </form>
+    <hr>
+    <div class="modal-kicker">Holiday request</div>
+    <form method="post" action="{{ url_for('holiday_request') }}">
+      <input type="hidden" name="request_date" value="${dateValue}">
+      <div class="detail-grid">
+        <label>Requested by<input type="text" name="requested_by" value="Nicola"></label>
+        <label>Note<input type="text" name="note" placeholder="Optional"></label>
+      </div>
+      <button class="btn secondary" type="submit">Request holiday</button>
+    </form>`;
+  document.getElementById('addShiftModal').classList.add('open');
+  document.body.classList.add('modal-open');
+}
+function closeAddShift(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('addShiftModal').classList.remove('open');
+  document.body.classList.remove('modal-open');
+}
+document.querySelectorAll('.calendar-day[tabindex="0"]').forEach(day => {
+  day.addEventListener('click', event => {
+    if (event.target.closest('.calendar-event')) return;
+    openAddShift(day.dataset.date);
+  });
+  day.addEventListener('keydown', event => {
+    if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('.calendar-event')) {
+      event.preventDefault();
+      openAddShift(day.dataset.date);
+    }
+  });
+});
+
+const shiftData = {{ shift_json|safe }};
+function money(value) { return '£' + Number(value).toFixed(2); }
+function openShift(id) {
+  const s = shiftData[id];
+  if (!s) return;
+  const rate = s.pay_type === 'overtime' ? {{ overtime_rate|tojson }} : (s.pay_type === 'holiday' ? {{ holiday_rate|tojson }} : {{ hourly_rate|tojson }});
+  const earnings = rate ? money(s.hours * rate) : 'Not configured';
+  const finish = s.finish_time || '—';
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-title-row"><div class="modal-icon ${s.employer.toLowerCase()}"></div><div><div class="modal-kicker">${s.employer}</div><h2>${s.date_label}</h2></div></div>
+    <div class="detail-grid">
+      <div><span>Day</span><strong>${s.day}</strong></div>
+      <div><span>Week</span><strong>${s.week}</strong></div>
+      <div><span>Start</span><strong>${s.start_time || '—'}</strong></div>
+      <div><span>Finish</span><strong>${finish}</strong></div>
+      <div><span>Shift length</span><strong>${s.hours ? s.hours + ' hours' : '—'}</strong></div>
+      <div><span>Pay type</span><strong>${s.pay_type === 'overtime' ? 'Overtime' : (s.pay_type === 'holiday' ? 'Holiday' : 'Normal')}</strong></div>
+      <div><span>Estimated gross</span><strong>${earnings}</strong></div>
+    </div>
+  `;
+  document.getElementById('shiftModal').classList.add('open');
+  document.body.classList.add('modal-open');
+}
+function closeShift(event) {
+  if (event && event.target !== event.currentTarget) return;
+  document.getElementById('shiftModal').classList.remove('open');
+  document.body.classList.remove('modal-open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeShift(); });
+</script>
+</body>
+</html>

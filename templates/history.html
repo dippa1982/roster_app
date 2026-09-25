@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Roster History</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+<nav><div class="container nav-inner"><div class="brand">My <span>Roster</span></div><div class="links"><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('calendar') }}">Calendar</a><a href="{{ url_for('upload_roster') }}">Upload</a><a href="{{ url_for('history') }}">History</a></div></div></nav>
+<main><div class="container">
+<h1>Roster History</h1><p class="subtitle">Every uploaded roster is kept here. Activate an older one if you need it.</p>
+<div class="card"><table><thead><tr><th>Period</th><th>Employee</th><th>File</th><th>Uploaded</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rosters %}
+<tr><td>{{ r.period_start.strftime('%d %b %Y') }} – {{ r.period_end.strftime('%d %b %Y') }}</td><td>{{ r.employee or '—' }}</td><td>{{ r.filename }}</td><td>{{ r.uploaded_at.strftime('%d %b %Y %H:%M') }}</td><td>{% if r.active %}<span class="badge ocado">Active</span>{% else %}<span class="label">Archived</span>{% endif %}</td><td>{% if not r.active %}<a class="btn secondary" href="{{ url_for('activate_roster', roster_id=r.id) }}">Activate</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">No rosters uploaded yet.</td></tr>{% endfor %}
+</tbody></table></div>
+</div></main>
+</body></html>

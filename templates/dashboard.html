@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Roster Dashboard</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+<nav><div class="container nav-inner"><div class="brand">My <span>Roster</span></div><div class="links"><a class="active" href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('calendar') }}">Calendar</a><a href="{{ url_for('upload_roster') }}">Upload</a><a href="{{ url_for('history') }}">History</a></div></div></nav>
+<main><div class="container">
+{% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+{% if not roster %}
+<div class="card"><h1>No roster loaded</h1><p class="subtitle">Upload your first roster PDF to get started.</p><a class="btn" href="{{ url_for('upload_roster') }}">Upload roster</a></div>
+{% else %}
+<h1>Roster Dashboard</h1>
+<div class="subtitle">{{ roster.employee or "Employee" }} · {{ roster.period_start.strftime('%d %b %Y') }} – {{ roster.period_end.strftime('%d %b %Y') }}</div>
+<div class="grid stats">
+<div class="card"><div class="label">Total shifts</div><div class="stat-value">{{ stats.total_shifts }}</div></div>
+<div class="card"><div class="label">Total hours</div><div class="stat-value">{{ "%.0f"|format(stats.total_hours) }}</div></div>
+<div class="card"><div class="label">Ocado</div><div class="stat-value">{{ stats.ocado_shifts }}</div><div class="label">{{ "%.0f"|format(stats.ocado_hours) }} hours</div></div>
+<div class="card"><div class="label">Morrisons</div><div class="stat-value">{{ stats.morrisons_shifts }}</div><div class="label">{{ "%.0f"|format(stats.morrisons_hours) }} hours</div></div>
+<div class="card"><div class="label">Holidays</div><div class="stat-value">{{ stats.holidays }}</div></div>
+</div>
+
+<div class="card calendar-preview">
+  <div class="section-heading"><div><h2>Calendar</h2><div class="label">Your roster at a glance</div></div><a class="btn" href="{{ url_for('calendar') }}">Open full calendar</a></div>
+  <div class="mini-calendar">
+    <div class="mini-calendar-title">{{ preview_month_name }} {{ preview_year }}</div>
+    <div class="mini-weekdays">{% for day in weekdays %}<span>{{ day[:3] }}</span>{% endfor %}</div>
+    <div class="mini-grid">
+      {% for week in preview_calendar_weeks %}{% for cell in week %}<div class="mini-day {% if not cell.in_month %}outside-month{% endif %} {% if cell.is_today %}today{% endif %}"><span>{{ cell.date.day }}</span>{% for event in cell.events %}<i class="mini-event {{ event.employer|lower }}"></i>{% endfor %}</div>{% endfor %}{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:22px">
+<div class="section-heading"><div><h2>Upcoming shifts</h2><div class="label">Uploaded {{ roster.uploaded_at.strftime('%d %b %Y %H:%M') }}</div></div><a class="btn secondary" href="{{ url_for('upload_roster') }}">Upload new roster</a></div>
+<table><thead><tr><th>Date</th><th>Day</th><th>Start</th><th>Hours</th><th>Shift</th><th>Week</th></tr></thead><tbody>
+{% for s in upcoming_shifts %}
+<tr><td>{{ s.shift_date.strftime('%d/%m/%Y') }}</td><td>{{ s.day_name }}</td><td>{{ s.start_time or '—' }}</td><td>{{ "%.0f"|format(s.hours) if s.hours else '—' }}</td><td><span class="badge {{ s.employer|lower }}">{{ s.employer }}</span></td><td>{{ s.week_number }}</td></tr>
+{% else %}<tr><td colspan="6">No upcoming shifts in this roster.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endif %}
+</div></main>
+</body></html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · My Roster</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav><div class="container nav-inner"><div class="brand">My <span>Roster</span></div><div class="links"><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('calendar') }}">Calendar</a><a href="{{ url_for('upload_roster') }}">Upload</a><a href="{{ url_for('history') }}">History</a><a class="active" href="{{ url_for('settings') }}">Settings</a></div></div></nav>
+<main><div class="container">
+{% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+<div class="card settings-card"><h1>Settings</h1><p class="subtitle">Set your pay rates so the app can estimate gross earnings.</p>
+<form method="post">
+<label for="hourly_rate">Normal shift (£/hour)</label>
+<input class="text-input" id="hourly_rate" name="hourly_rate" type="number" min="0" step="0.01" value="{{ settings.hourly_rate if settings.hourly_rate is not none else '12.75' }}">
+<label for="holiday_rate">Holiday (£/hour)</label>
+<input class="text-input" id="holiday_rate" name="holiday_rate" type="number" min="0" step="0.01" value="{{ settings.holiday_rate }}">
+<label for="overtime_rate">Overtime (£/hour)</label>
+<input class="text-input" id="overtime_rate" name="overtime_rate" type="number" min="0" step="0.001" value="{{ settings.overtime_rate }}">
+
+<h2>Email holiday requests</h2>
+<p class="settings-note">When a holiday is requested in the calendar, the app will automatically email you so you can add it to MiOcado.</p>
+<label for="smtp_host">SMTP server</label>
+<input class="text-input" id="smtp_host" name="smtp_host" type="text" value="{{ settings.smtp_host }}">
+<label for="smtp_port">SMTP port</label>
+<input class="text-input" id="smtp_port" name="smtp_port" type="number" min="1" value="{{ settings.smtp_port }}">
+<label for="smtp_username">Email / SMTP username</label>
+<input class="text-input" id="smtp_username" name="smtp_username" type="email" value="{{ settings.smtp_username }}" autocomplete="username">
+<label for="smtp_password">Email password / app password</label>
+<input class="text-input" id="smtp_password" name="smtp_password" type="password" placeholder="Leave blank to keep the saved password" autocomplete="new-password">
+<label for="email_to">Send notifications to</label>
+<input class="text-input" id="email_to" name="email_to" type="email" value="{{ settings.email_to }}" placeholder="Leave blank to send to the SMTP username">
+<button class="btn" type="submit">Save settings</button>
+</form>
+<form method="post" action="{{ url_for('test_email') }}">
+<button class="btn secondary" type="submit">Send test email</button>
+</form>
+<p class="settings-note">Your current rates are £12.75 normal, £13.66 holiday and £19.125 overtime (time and a half). Estimates do not account for deductions, breaks or tax.</p>
+<p class="settings-note">For Gmail, use <strong>smtp.gmail.com</strong>, port <strong>587</strong>, and a Gmail <strong>App Password</strong> rather than your normal Gmail password.</p>
+</div>
+</div></main>
+</body></html>

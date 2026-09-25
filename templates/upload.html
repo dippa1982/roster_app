@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Upload Roster</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+<nav><div class="container nav-inner"><div class="brand">My <span>Roster</span></div><div class="links"><a href="{{ url_for('dashboard') }}">Dashboard</a><a href="{{ url_for('calendar') }}">Calendar</a><a href="{{ url_for('upload_roster') }}">Upload</a><a href="{{ url_for('history') }}">History</a></div></div></nav>
+<main><div class="container">
+<h1>Upload a new roster</h1><p class="subtitle">Upload the PDF when Ocado publishes your next roster. The new one becomes active automatically.</p>
+{% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+<div class="card upload-box">
+<form method="post" enctype="multipart/form-data">
+<h2>Roster PDF</h2>
+<p class="label">The current parser is built for the Spoke Leeds roster format.</p>
+<input type="file" name="roster" accept=".pdf,application/pdf" required>
+<button class="btn" type="submit">Upload & process roster</button>
+</form>
+</div>
+</div></main>
+</body></html>

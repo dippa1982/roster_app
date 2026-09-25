@@ -1,0 +1,10 @@
+{
+  "hourly_rate": 12.75,
+  "holiday_rate": 13.66,
+  "overtime_rate": 19.125,
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_username": "bpalpha.brown@googlemail.com",
+  "smtp_password": "reio gend ukac djal",
+  "email_to": ""
+}
